@@ -25,7 +25,7 @@ SECRET_KEY = 'm%!)6=)=n!=sgt5$_r=a=rw5sg$qto^75hn5rr6lic14=r7al_'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -138,7 +138,7 @@ if not os.path.isdir(MEDIA_ROOT):
 IPC_PATH = "/home/diego/projetos/ethereum/redeprivada/geth.ipc"
 
 # Onde procurar o arquivo *.abi que descreve o contrato
-ABI_PATH = "/home/diego/projetos/ferias2018.2/blockchain/Blockchain.abi"
+ABI_PATH = "/home/diego/projetos/ferias2018.2/blockchain/Creditos.abi"
 
 if not os.path.isfile(ABI_PATH):
     print("Aviso: não foi encontrado um arquivo ABI que descreve o contrato no ABI_PATH %s" % ABI_PATH)

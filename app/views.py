@@ -8,7 +8,7 @@ from os import path
 from json import dumps
 
 from .tipos import Status, Retorno
-from .blockchain import Blockchain
+# from .blockchain import Blockchain
 
 import python3_gearman as gearman
 
@@ -20,7 +20,7 @@ class FileView(APIView):
     parser_classes = (MultiPartParser, FormParser)
     def post(self, request, *args, **kwargs):
 
-        filefieldname = "hiho"
+        filefieldname = "data"
         if filefieldname not in request.FILES:
             return Response("cade o arquivo? a chave deve ser %s" % filefieldname, status=status.HTTP_400_BAD_REQUEST)
 
@@ -74,71 +74,71 @@ class MNISTPredictView(APIView):
         Verificar se o usurário pagou para usar
         """
 
-        nome_chave_endereco = "endereco"
-        if nome_chave_endereco not in request.data:
-            retorno.status = Status.FALHA
-            retorno.adicionar("Informe o endereço do usuário sob a chave '%s'" % nome_chave_endereco)
-            return Response(retorno.get(), status=status.HTTP_400_BAD_REQUEST)
+        # nome_chave_endereco = "endereco"
+        # if nome_chave_endereco not in request.data:
+        #     retorno.status = Status.FALHA
+        #     retorno.adicionar("Informe o endereço do usuário sob a chave '%s'" % nome_chave_endereco)
+        #     return Response(retorno.get(), status=status.HTTP_400_BAD_REQUEST)
 
-        blkn = Blockchain()
-        usuario = blkn.validar_usuario(request.data[nome_chave_endereco])
+        # blkn = Blockchain()
+        # usuario = blkn.validar_usuario(request.data[nome_chave_endereco])
 
-        if not usuario:
-            retorno.status = Status.FALHA
-            retorno.adicionar("Endereço informado não é válido")
-            return Response(retorno.get(), status=status.HTTP_400_BAD_REQUEST)
+        # if not usuario:
+        #     retorno.status = Status.FALHA
+        #     retorno.adicionar("Endereço informado não é válido")
+        #     return Response(retorno.get(), status=status.HTTP_400_BAD_REQUEST)
 
-        if blkn.verificar_saldo(usuario) < self.preco:
-            retorno.status = Status.FALHA
-            retorno.adicionar("Saldo insuficiente.")
-            return Response(retorno.get(), status=status.HTTP_402_PAYMENT_REQUIRED)
+        # if blkn.verificar_saldo(usuario) < self.preco:
+        #     retorno.status = Status.FALHA
+        #     retorno.adicionar("Saldo insuficiente.")
+        #     return Response(retorno.get(), status=status.HTTP_402_PAYMENT_REQUIRED)
 
-        blkn.debitar_creditos(usuario, self.preco)
-        retorno.adicionar("Pagamento realizado")
+        # blkn.debitar_creditos(usuario, self.preco)
+        # retorno.adicionar("Pagamento realizado")
 
-        """
-        Salvar a imagem em disco
-        """
-        nome_chave_imagem = "data"
-        if nome_chave_imagem not in request.FILES:
-            retorno.status = Status.FALHA
-            retorno.adicionar("Faça upload do arquivo de imagem sob a chave '%s'" % nome_chave_imagem)
-            return Response(retorno.get(), status=status.HTTP_400_BAD_REQUEST)
+        # """
+        # Salvar a imagem em disco
+        # """
+        # nome_chave_imagem = "data"
+        # if nome_chave_imagem not in request.FILES:
+        #     retorno.status = Status.FALHA
+        #     retorno.adicionar("Faça upload do arquivo de imagem sob a chave '%s'" % nome_chave_imagem)
+        #     return Response(retorno.get(), status=status.HTTP_400_BAD_REQUEST)
 
-        imagem = request.FILES[nome_chave_imagem]
-        caminho_imagem = path.join(settings.MEDIA_ROOT, imagem.name)
+        # imagem = request.FILES[nome_chave_imagem]
+        # caminho_imagem = path.join(settings.MEDIA_ROOT, imagem.name)
 
-        with open(caminho_imagem, "wb+") as myf:
-            # Iterar nos chunks do arquivo para não sobrecarregar memória
-            for chunk in imagem.chunks():
-                myf.write(chunk)
+        # with open(caminho_imagem, "wb+") as myf:
+        #     # Iterar nos chunks do arquivo para não sobrecarregar memória
+        #     for chunk in imagem.chunks():
+        #         myf.write(chunk)
 
-        """
-        Acionar o worker, passando o caminho para a imagem salva em disco
-        """
-        gm_client = gearman.GearmanClient(['localhost:4730'])
-        # TODO: retornar falha caso não haja um worker disponível
+        # """
+        # Acionar o worker, passando o caminho para a imagem salva em disco
+        # """
+        # gm_client = gearman.GearmanClient(['localhost:4730'])
+        # # TODO: retornar falha caso não haja um worker disponível
 
-        try:
-            requisicao_execucao = gm_client.submit_job(self.atividade, caminho_imagem)
-        except Exception as e:
-            retorno.status = Status.FALHA
-            retorno.adicionar("Deu erro na requsição: %s" % e.args[0])
-            # TODO: estornar pagamento
-        else:
-            analise_execucao = check_request_status(requisicao_execucao)
-            # Se tiver warnings, entendemos que houve falha na execução
-            if not analise_execucao['warnings']:
-                retorno.status = Status.SUCESSO
-                retorno.adicionar("Tarefa completada.")
-            else:
-                retorno.status = Status.FALHA
-                retorno.adicionar(analise_execucao["warnings"])
-                # TODO: estornar pagamento
+        # try:
+        #     requisicao_execucao = gm_client.submit_job(self.atividade, caminho_imagem)
+        # except Exception as e:
+        #     retorno.status = Status.FALHA
+        #     retorno.adicionar("Deu erro na requsição: %s" % e.args[0])
+        #     # TODO: estornar pagamento
+        # else:
+        #     analise_execucao = check_request_status(requisicao_execucao)
+        #     # Se tiver warnings, entendemos que houve falha na execução
+        #     if not analise_execucao['warnings']:
+        #         retorno.status = Status.SUCESSO
+        #         retorno.adicionar("Tarefa completada.")
+        #     else:
+        #         retorno.status = Status.FALHA
+        #         retorno.adicionar(analise_execucao["warnings"])
+        #         # TODO: estornar pagamento
 
-            retorno.resultado = analise_execucao["resultado"]
+        #     retorno.resultado = analise_execucao["resultado"]
 
-        return Response(retorno.get(), status=status.HTTP_200_OK)
+        # return Response(retorno.get(), status=status.HTTP_200_OK)
 
 
 def check_request_status(job_request):
