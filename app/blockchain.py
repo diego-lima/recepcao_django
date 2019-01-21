@@ -5,6 +5,14 @@ from web3 import Web3
 
 
 """
+Se pythonanywhere == True, então vamos pular todas as interações com o nó
+ou com a blockchain
+"""
+
+pythonanywhere = True
+
+
+"""
 Configurar conexão ao node
 """
 provider = Web3.IPCProvider(settings.IPC_PATH)
@@ -20,6 +28,9 @@ def checar_conexao(completo=False):
 
     Se completo = False, só checamos se existe um nó na rede
     """
+
+    if pythonanywhere:
+        return
 
     """
     Verifica se existe um nó rodando
@@ -43,26 +54,27 @@ def checar_conexao(completo=False):
             raise Exception("Endereço configurado incorretamente. Está convertido para checksum?")
 
 
-checar_conexao(completo=True)
-"""
-Configurar conta
-"""
-w3.personal.unlockAccount(settings.ENDERECO_ETH, settings.PASSPHRASE_ETH)
+if not pythonanywhere:
+    checar_conexao(completo=True)
+    """
+    Configurar conta
+    """
+    w3.personal.unlockAccount(settings.ENDERECO_ETH, settings.PASSPHRASE_ETH)
 
-"""
-Configurar contrato
-"""
-arquivo_abi = open(settings.ABI_PATH)
-abi = loads(arquivo_abi.read())
-arquivo_abi.close()
+    """
+    Configurar contrato
+    """
+    arquivo_abi = open(settings.ABI_PATH)
+    abi = loads(arquivo_abi.read())
+    arquivo_abi.close()
 
-contrato = w3.eth.contract(
-    address=settings.ENDERECO_CONTRATO_ETH,
-    abi=abi,
-)
+    contrato = w3.eth.contract(
+        address=settings.ENDERECO_CONTRATO_ETH,
+        abi=abi,
+    )
 
-if not contrato.functions.consultarOficial(settings.ENDERECO_ETH).call():
-    raise Exception("O endereço configurado não tem as permissões necessárias para operar.")
+    if not contrato.functions.consultarOficial(settings.ENDERECO_ETH).call():
+        raise Exception("O endereço configurado não tem as permissões necessárias para operar.")
 
 
 # TODO: e se não tiver saldo suficiente para transacionar?
@@ -79,6 +91,8 @@ class Blockchain:
         :param endereco: endereço na blockchain
         :return: saldo de créditos disponível
         """
+        if pythonanywhere:
+            return 100
 
         checar_conexao()
 
@@ -98,6 +112,9 @@ class Blockchain:
         :param unidade: da quantia (se é em ether ou em wei)
         :return:
         """
+
+        if pythonanywhere:
+            return "Executando sem acesso à blockchain."
 
         checar_conexao()
 
@@ -129,6 +146,9 @@ class Blockchain:
         :param quantia: quantia de créditos a ser debitada do saldo
         :return: True se débito realizado com sucesso, se não, False
         """
+
+        if pythonanywhere:
+            return
 
         checar_conexao()
 
