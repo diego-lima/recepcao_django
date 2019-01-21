@@ -202,6 +202,27 @@ class MNISTPredictView(APIView):
         return Response(retorno.get(), status=status.HTTP_200_OK)
 
 
+class FileView(APIView):
+    """Teste de upload de arquivo e armazenamento no diretório de mediaj"""
+    # Usamos os dois parsers abaixo para suportar completamente o envio de forms, incluido upload de arquivos
+    parser_classes = (MultiPartParser, FormParser)
+
+    def post(self, request):
+
+        filefieldname = "data"
+        if filefieldname not in request.FILES:
+            return Response("cade o arquivo? a chave deve ser %s" % filefieldname, status=status.HTTP_400_BAD_REQUEST)
+
+        filepath = path.join(settings.MEDIA_ROOT, request.FILES[filefieldname].name)
+
+        with open(filepath, "wb+") as myf:
+            # Iterar nos chunks do arquivo para não sobrecarregar memória
+            for chunk in request.FILES[filefieldname].chunks():
+                myf.write(chunk)
+
+        return Response("fala tuuuUuUuU", status=status.HTTP_201_CREATED)
+
+
 def check_request_status(job_request):
     """
     Serve para analisar o resultado da execução através do Gearman.
