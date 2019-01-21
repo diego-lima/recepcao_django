@@ -10,10 +10,15 @@ Configurar conexão ao node
 provider = Web3.IPCProvider(settings.IPC_PATH)
 w3 = Web3(provider)
 
+
 def checar_conexao(completo=False):
     """
-    Serve para verificar se está tudo OK para acessar o contrato na rede ethereum
-    :return: True/False
+    Serve para verificar se está tudo OK para acessar o contrato na rede ethereum:
+    - Se existe um nó rodando na rede
+    - Se o ABI pode ser encontrado
+    - Se o endereço(sem ser o do contrato) foi setado corretamente.
+
+    Se completo = False, só checamos se existe um nó na rede
     """
 
     """
@@ -28,15 +33,14 @@ def checar_conexao(completo=False):
         Verifica se existe o arquivo de configuração do contrato
         """
         if not isfile(settings.ABI_PATH):
-            raise Exception("não foi encontrado um arquivo ABI que descreve o contrato no ABI_PATH %s" % settings.ABI_PATH)
-
+            raise Exception("não foi encontrado um arquivo ABI que descreve o contrato no ABI_PATH %s" %
+                            settings.ABI_PATH)
 
         """
         Verifica se o endereço está setado corretamente
         """
         if not w3.isChecksumAddress(settings.ENDERECO_ETH):
             raise Exception("Endereço configurado incorretamente. Está convertido para checksum?")
-
 
 
 checar_conexao(completo=True)
@@ -58,7 +62,7 @@ contrato = w3.eth.contract(
 )
 
 if not contrato.functions.consultarOficial(settings.ENDERECO_ETH).call():
-    raise Exception("O endereço configurado não tem as permissões necessárias.")
+    raise Exception("O endereço configurado não tem as permissões necessárias para operar.")
 
 
 # TODO: e se não tiver saldo suficiente para transacionar?
@@ -69,7 +73,8 @@ class Blockchain:
     Verifica saldo de usuários, e debita
     """
 
-    def verificar_saldo(self, endereco):
+    @staticmethod
+    def verificar_saldo(endereco):
         """
         :param endereco: endereço na blockchain
         :return: saldo de créditos disponível
@@ -81,7 +86,44 @@ class Blockchain:
 
         return contrato.functions.consultarSaldo(addr).call()
 
-    def debitar_creditos(self, endereco, quantia):
+    @staticmethod
+    def pagar(endereco, quantia, passphrase, unidade="ether"):
+        """
+        Realiza uma transação para o contrato a partir das informações fornecidas
+        pelo usuário.
+
+        :param endereco: do usuário
+        :param quantia: a ser transferida
+        :param passphrase: da conta do usuário
+        :param unidade: da quantia (se é em ether ou em wei)
+        :return:
+        """
+
+        checar_conexao()
+
+        if unidade.lower() == "ether":
+            valor = w3.toWei(quantia, "ether")
+        elif unidade.lower() != "wei":
+            raise Exception("Unidade de pagamento inválida. Tente wei ou ether")
+        else:
+            valor = quantia
+
+        transacao = {
+            "from": endereco,
+            "to": settings.ENDERECO_CONTRATO_ETH,
+            "value": valor
+        }
+
+        if w3.personal.unlockAccount(endereco, passphrase):
+            retorno = w3.eth.sendTransaction(transacao)
+            w3.personal.lockAccount(endereco)
+        else:
+            retorno = "Não foi possível desbloquear a conta. Os dados de acesso (endereço e passphrase) conferem?"
+
+        return retorno
+
+    @staticmethod
+    def debitar_creditos(endereco, quantia):
         """
         :param endereco: endereço na blockchain
         :param quantia: quantia de créditos a ser debitada do saldo
@@ -92,9 +134,10 @@ class Blockchain:
 
         addr = w3.toChecksumAddress(endereco)
 
-        contrato.transact({"from":settings.ENDERECO_ETH}).debitar(addr, quantia)
+        contrato.transact({"from": settings.ENDERECO_ETH}).debitar(addr, quantia)
 
-    def validar_usuario(self, endereco):
+    @staticmethod
+    def validar_usuario(endereco):
         """
         Verifica se o endereço passado é válido.
 

@@ -15,10 +15,10 @@ Including another URLconf
 """
 from django.urls import include, path
 
-from .views import FileView, ProcessView, MNISTPredictView
+from .views import MNISTPredictView, saldo_consultar, saldo_pagar
 
 urlpatterns = [
-    path(r'upload/', FileView.as_view(), name='file-upload'),
-    path(r'process/', ProcessView.as_view(), name='process'),
-    path(r'mnist/', MNISTPredictView.as_view(), name='mnist'),
+    path(r'processar/mnist/', MNISTPredictView.as_view(), name='process_mnist'),
+    path(r'saldo/consultar', saldo_consultar, name='saldo_consultar'),
+    path(r'saldo/pagar', saldo_pagar, name='saldo_pagar'),
 ]

@@ -1,56 +1,115 @@
-from django.shortcuts import render
+from django.conf import settings
+from hexbytes.main import HexBytes
+from os import path
+import python3_gearman as gearman
+from rest_framework.decorators import api_view
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework import status
-from django.conf import settings
-from os import path
-from json import dumps
+from web3 import Web3
 
-from .tipos import Status, Retorno
-# from .blockchain import Blockchain
-
-import python3_gearman as gearman
-
-# Create your views here.
-
-class FileView(APIView):
-    """Teste de upload de arquivo e armazenamento no diretório de mediaj"""
-    # Usamos os dois parsers abaixo para suportar completamente o envio de forms, incluido upload de arquivos
-    parser_classes = (MultiPartParser, FormParser)
-    def post(self, request, *args, **kwargs):
-
-        filefieldname = "data"
-        if filefieldname not in request.FILES:
-            return Response("cade o arquivo? a chave deve ser %s" % filefieldname, status=status.HTTP_400_BAD_REQUEST)
-
-        filepath = path.join(settings.MEDIA_ROOT, request.FILES[filefieldname].name)
-
-        with open(filepath, "wb+") as myf:
-            # Iterar nos chunks do arquivo para não sobrecarregar memória
-            for chunk in request.FILES[filefieldname].chunks():
-                myf.write(chunk)
-
-        return Response("fala tuuuUuUuU", status=status.HTTP_201_CREATED)
+from .utils import verificar_endereco_usuario, validar_quantia, validar_unidade, validar_passphase
+from .tipos import Retorno
+from .blockchain import Blockchain as Blkn
 
 
-class ProcessView(APIView):
-    """Teste de uso do Gearman para repassar carga de trabalho para o core"""
 
-    parser_classes = (MultiPartParser, FormParser)
+@api_view(['GET'])
+@verificar_endereco_usuario('endereco')
+def saldo_consultar(request):
+    """
+    Realiza consulta de saldo na blockchain. O retorno é a quantia de créditos
+    ainda disponível"""
 
-    def post(self, request, *args, **kwargs):
-        gm_client = gearman.GearmanClient(['localhost:4730'])
+    retorno = Retorno()
 
-        try:
-            completed_job_request = gm_client.submit_job("process", dumps(request.data))
-        except Exception as e:
-            msg = u"Deu erro na requsição: %s" % e.args[0]
-            return Response(msg, status=status.HTTP_400_BAD_REQUEST)
+    chave_endereco = 'endereco'
+
+    usuario = Blkn.validar_usuario(request.GET[chave_endereco])
+
+    retorno.resultado = Blkn.verificar_saldo(usuario)
+
+    return Response(retorno.get(), status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@verificar_endereco_usuario('endereco', 'POST')
+def saldo_pagar(request):
+    """
+    Realiza compra de créditos.
+    O usuário deve informar o seu endereço, a quantia que deseja pagar
+    e a unidade da quantia (se é em ether ou em wei). Padrão assumido ether.
+    Também deve informar sua passphrase para que eu possa realizar o pagamento
+    em nome dele"""
+
+    retorno = Retorno()
+
+    # Chaves que vamos buscar os valores no request
+    chave_endereco = 'endereco'
+    chave_quantia = 'quantia'
+    chave_unidade = 'unidade'
+    chave_passphrase = 'passphrase'
+
+    """
+    Validar a quantia
+    """
+    if chave_quantia not in request.data:
+        retorno.falhar("Informe a quantia para ser transferida ao contrato sob a chave %s." % chave_quantia)
+        return Response(retorno.get(), status=status.HTTP_400_BAD_REQUEST)
+
+    quantia = validar_quantia(request.data[chave_quantia])
+
+    """
+    Validar a unidade
+    """
+    if chave_unidade not in request.data:
+        """
+        Estamos assumindo que ninguém transferiria um valor tão grande quanto 1000
+        se fosse ether."""
+        if quantia > 1000:
+            retorno.adicionar("Assumindo pagamento feito em Wei")
+            unidade = "wei"
         else:
-            msg = check_request_status(completed_job_request)
+            retorno.adicionar("Assumindo pagamento feito em ether")
+            unidade = "ether"
+    else:
+        unidade = validar_unidade(request.data[chave_unidade])
 
-        return Response(msg, status=status.HTTP_200_OK)
+    if not unidade:
+        retorno.falhar("Unidade de pagamento inválida. Tente wei ou ether")
+        return Response(retorno.get(), status=status.HTTP_400_BAD_REQUEST)
+
+    """
+    Validar o passphrase
+    """
+    if chave_passphrase not in request.data:
+        retorno.falhar("Informe a passphrase para poder fechar a transação sob a chave %s." % chave_passphrase)
+        return Response(retorno.get(), status=status.HTTP_400_BAD_REQUEST)
+
+    passphrase = validar_passphase(request.data[chave_passphrase])
+
+    if not passphrase and passphrase != '':
+        retorno.falhar("Passphrase inválida.")
+        return Response(retorno.get(), status=status.HTTP_400_BAD_REQUEST)
+
+    """
+    Validar o usuário e tentar realizar a transação com as credenciais informadas
+    """
+
+    usuario = Blkn.validar_usuario(request.data[chave_endereco])
+
+    resultado = Blkn.pagar(usuario, quantia, passphrase, unidade)
+    if isinstance(resultado, HexBytes):
+        retorno.resultado = resultado.hex()
+        retorno.adicionar("O resultado é o hash da transação.")
+    else:
+        # Se o resultado não for um HexBytes (o hash da transação), então será uma string mensagem
+        retorno.falhar(resultado)
+        return Response(retorno.get(), status=status.HTTP_400_BAD_REQUEST)
+
+    return Response(retorno.get(), status=status.HTTP_200_OK)
+
 
 class MNISTPredictView(APIView):
     parser_classes = (MultiPartParser, FormParser)
@@ -60,7 +119,24 @@ class MNISTPredictView(APIView):
     # O nome da atividade que é realizada no lado do core
     atividade = "MNISTProcess"
 
-    def post(self, request, *args, **kwargs):
+    def get(self, request):
+        """
+        Retorna apenas o preço desse serviço, em ETH.
+        Retorna também o valor em Wei.
+        """
+
+        retorno = Retorno()
+
+        retorno.resultado = self.preco
+
+        retorno.adicionar("O resultado foi o preço em Ether.")
+
+        retorno.adicionar("Em Wei: %d" % Web3.toWei(self.preco, "ether"))
+
+        return Response(retorno.get(), status=status.HTTP_200_OK)
+
+    @verificar_endereco_usuario('endereco')
+    def post(self, request):
         """
         Verifica se o usuário pagou.
         Recebe uma imagem de um dígito numérico.
@@ -74,71 +150,56 @@ class MNISTPredictView(APIView):
         Verificar se o usurário pagou para usar
         """
 
-        # nome_chave_endereco = "endereco"
-        # if nome_chave_endereco not in request.data:
-        #     retorno.status = Status.FALHA
-        #     retorno.adicionar("Informe o endereço do usuário sob a chave '%s'" % nome_chave_endereco)
-        #     return Response(retorno.get(), status=status.HTTP_400_BAD_REQUEST)
+        chave_endereco = "endereco"
 
-        # blkn = Blockchain()
-        # usuario = blkn.validar_usuario(request.data[nome_chave_endereco])
+        usuario = Blkn.validar_usuario(request.data[chave_endereco])
 
-        # if not usuario:
-        #     retorno.status = Status.FALHA
-        #     retorno.adicionar("Endereço informado não é válido")
-        #     return Response(retorno.get(), status=status.HTTP_400_BAD_REQUEST)
+        if Blkn.verificar_saldo(usuario) < self.preco:
+            retorno.falhar("Saldo insuficiente.")
+            return Response(retorno.get(), status=status.HTTP_402_PAYMENT_REQUIRED)
 
-        # if blkn.verificar_saldo(usuario) < self.preco:
-        #     retorno.status = Status.FALHA
-        #     retorno.adicionar("Saldo insuficiente.")
-        #     return Response(retorno.get(), status=status.HTTP_402_PAYMENT_REQUIRED)
+        Blkn.debitar_creditos(usuario, self.preco)
+        retorno.adicionar("Pagamento realizado")
 
-        # blkn.debitar_creditos(usuario, self.preco)
-        # retorno.adicionar("Pagamento realizado")
+        """
+        Salvar a imagem em disco
+        """
+        nome_chave_imagem = "data"
+        if nome_chave_imagem not in request.FILES:
+            retorno.falhar("Faça upload do arquivo de imagem sob a chave '%s'" % nome_chave_imagem)
+            return Response(retorno.get(), status=status.HTTP_400_BAD_REQUEST)
 
-        # """
-        # Salvar a imagem em disco
-        # """
-        # nome_chave_imagem = "data"
-        # if nome_chave_imagem not in request.FILES:
-        #     retorno.status = Status.FALHA
-        #     retorno.adicionar("Faça upload do arquivo de imagem sob a chave '%s'" % nome_chave_imagem)
-        #     return Response(retorno.get(), status=status.HTTP_400_BAD_REQUEST)
+        imagem = request.FILES[nome_chave_imagem]
+        caminho_imagem = path.join(settings.MEDIA_ROOT, imagem.name)
 
-        # imagem = request.FILES[nome_chave_imagem]
-        # caminho_imagem = path.join(settings.MEDIA_ROOT, imagem.name)
+        with open(caminho_imagem, "wb+") as myf:
+            # Iterar nos chunks do arquivo para não sobrecarregar memória
+            for chunk in imagem.chunks():
+                myf.write(chunk)
 
-        # with open(caminho_imagem, "wb+") as myf:
-        #     # Iterar nos chunks do arquivo para não sobrecarregar memória
-        #     for chunk in imagem.chunks():
-        #         myf.write(chunk)
+        """
+        Acionar o worker, passando o caminho para a imagem salva em disco
+        """
+        gm_client = gearman.GearmanClient(['localhost:4730'])
+        # TODO: retornar falha caso não haja um worker disponível e estornar pagamento
 
-        # """
-        # Acionar o worker, passando o caminho para a imagem salva em disco
-        # """
-        # gm_client = gearman.GearmanClient(['localhost:4730'])
-        # # TODO: retornar falha caso não haja um worker disponível
+        try:
+            requisicao_execucao = gm_client.submit_job(self.atividade, caminho_imagem)
+        except Exception as e:
+            retorno.falhar("Deu erro na requsição: %s" % e.args[0])
+            # TODO: estornar pagamento
+        else:
+            analise_execucao = check_request_status(requisicao_execucao)
+            # Se tiver warnings, entendemos que houve falha na execução
+            if not analise_execucao['warnings']:
+                retorno.suceder("Tarefa completada.")
+            else:
+                retorno.falhar(analise_execucao["warnings"])
+                # TODO: estornar pagamento
 
-        # try:
-        #     requisicao_execucao = gm_client.submit_job(self.atividade, caminho_imagem)
-        # except Exception as e:
-        #     retorno.status = Status.FALHA
-        #     retorno.adicionar("Deu erro na requsição: %s" % e.args[0])
-        #     # TODO: estornar pagamento
-        # else:
-        #     analise_execucao = check_request_status(requisicao_execucao)
-        #     # Se tiver warnings, entendemos que houve falha na execução
-        #     if not analise_execucao['warnings']:
-        #         retorno.status = Status.SUCESSO
-        #         retorno.adicionar("Tarefa completada.")
-        #     else:
-        #         retorno.status = Status.FALHA
-        #         retorno.adicionar(analise_execucao["warnings"])
-        #         # TODO: estornar pagamento
+            retorno.resultado = analise_execucao["resultado"]
 
-        #     retorno.resultado = analise_execucao["resultado"]
-
-        # return Response(retorno.get(), status=status.HTTP_200_OK)
+        return Response(retorno.get(), status=status.HTTP_200_OK)
 
 
 def check_request_status(job_request):
@@ -146,18 +207,18 @@ def check_request_status(job_request):
     Serve para analisar o resultado da execução através do Gearman.
     Retorna o resultado da execução, o estado e os warnings lançados.
     """
-    status = ''
+    estado = ''
     resultado = ''
     warnings = []
     if job_request.complete:
-        status = job_request.state
+        estado = job_request.state
         warnings.extend(job_request.warning_updates)
         resultado = job_request.result
     elif job_request.timed_out:
         warnings.append("Time out")
 
     retorno = {
-        "status": status,
+        "status": estado,
         "resultado": resultado,
         "warnings": warnings
     }
