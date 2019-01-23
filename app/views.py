@@ -135,7 +135,6 @@ class MNISTPredictView(APIView):
 
         return Response(retorno.get(), status=status.HTTP_200_OK)
 
-    @verificar_endereco_usuario('endereco')
     def post(self, request):
         """
         Verifica se o usuário pagou.
@@ -151,8 +150,19 @@ class MNISTPredictView(APIView):
         """
 
         chave_endereco = "endereco"
+        """
+        Vemos se não está faltando o campo ou se seu valor é inválido
+        """
+        if chave_endereco not in request.data:
+            retorno.falhar("Informe o endereço do usuário sob a chave '%s'" % chave_endereco)
+            return Response(retorno.get(), status=status.HTTP_400_BAD_REQUEST)
 
         usuario = Blkn.validar_usuario(request.data[chave_endereco])
+
+        if not usuario:
+            retorno.falhar("Endereço informado não é válido")
+            return Response(retorno.get(), status=status.HTTP_400_BAD_REQUEST)
+
 
         if Blkn.verificar_saldo(usuario) < self.preco:
             retorno.falhar("Saldo insuficiente.")
